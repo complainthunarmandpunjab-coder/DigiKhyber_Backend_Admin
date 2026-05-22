@@ -47,9 +47,22 @@ const getDigiStudents = async (req, res) => {
       .skip((page - 1) * parseInt(limit))
       .limit(parseInt(limit))
 
+    // Join challan data for each student
+    const userIds = users.map(u => u._id.toString())
+    const challans = await DigiChallan.find({ userId: { $in: userIds } })
+    const challanMap = {}
+    challans.forEach(c => {
+      if (!challanMap[c.userId]) challanMap[c.userId] = c
+    })
+
+    const data = users.map(u => ({
+      ...u.toObject(),
+      challan: challanMap[u._id.toString()] || null,
+    }))
+
     res.json({
       success: true,
-      data:       users,
+      data,
       total,
       page:       parseInt(page),
       totalPages: Math.ceil(total / parseInt(limit)),
@@ -232,6 +245,21 @@ const updateTestScore = async (req, res) => {
       { new: true }
     ).select('-password')
     if (!doc) return res.status(404).json({ success: false, message: 'Student not found.' })
+
+    // Auto-create challan when student passes test (if not already exists)
+    if (testPassed === true || testPassed === 'true') {
+      const existingChallan = await DigiChallan.findOne({ userId: doc._id.toString() })
+      if (!existingChallan) {
+        const challanId = 'CH-' + Date.now()
+        await DigiChallan.create({
+          userId: doc._id.toString(),
+          challanId,
+          amount: 3250,
+          paid: false,
+        })
+      }
+    }
+
     res.json({ success: true, message: 'Test score updated.', data: doc })
   } catch (err) {
     res.status(500).json({ success: false, message: err.message })
@@ -300,6 +328,78 @@ const getDashboardStats = async (req, res) => {
         totalScholarships, pendingScholarships, approvedScholarships,
       }
     })
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// ─── DELETE DIGI STUDENT ──────────────────────────────────────
+const deleteDigiStudent = async (req, res) => {
+  try {
+    await connectMongo()
+    const user = await DigiUser.findByIdAndDelete(req.params.id)
+    if (!user) return res.status(404).json({ success: false, message: 'Student not found.' })
+
+    // Also delete related challans
+    await DigiChallan.deleteMany({ userId: req.params.id })
+
+    res.json({ success: true, message: 'Student deleted successfully.' })
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// ─── GET ALL COURSES (from students) ─────────────────────────
+const getDigiCourses = async (req, res) => {
+  try {
+    await connectMongo()
+    const result = await DigiUser.aggregate([
+      { $unwind: '$courses' },
+      { $group: { _id: '$courses', students: { $sum: 1 } } },
+      { $sort: { students: -1 } },
+    ])
+    const courses = result.map(r => ({ name: r._id, students: r.students }))
+    res.json({ success: true, data: courses })
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// ─── UPDATE CHALLAN ──────────────────────────────────────────
+const updateDigiChallan = async (req, res) => {
+  try {
+    await connectMongo()
+    const { paid, psid, txnId, amount } = req.body
+    const update = {}
+    if (paid     !== undefined) update.paid     = paid
+    if (psid     !== undefined) update.psid     = psid
+    if (txnId    !== undefined) update.txnId    = txnId
+    if (amount   !== undefined) update.amount   = amount
+    if (paid === true)          update.txnDate  = new Date()
+
+    const doc = await DigiChallan.findByIdAndUpdate(req.params.id, update, { new: true })
+    if (!doc) return res.status(404).json({ success: false, message: 'Challan not found.' })
+    res.json({ success: true, message: 'Challan updated.', data: doc })
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// ─── MARK CHALLAN PAID ────────────────────────────────────────
+const markChallanPaid = async (req, res) => {
+  try {
+    await connectMongo()
+    const { challanId, txnId, method } = req.body
+    if (!challanId) return res.status(400).json({ success: false, message: 'Challan ID required.' })
+
+    const challan = await DigiChallan.findOneAndUpdate(
+      { challanId },
+      { paid: true, txnId: txnId || null, txnDate: new Date() },
+      { new: true }
+    )
+    if (!challan) return res.status(404).json({ success: false, message: 'Challan not found.' })
+
+    res.json({ success: true, message: 'Challan marked as paid.', data: challan })
   } catch (err) {
     res.status(500).json({ success: false, message: err.message })
   }
@@ -433,10 +533,12 @@ const getMonthlyStats = async (req, res) => {
 }
 
 module.exports = {
-  getDigiStudents, getDigiStudentById, getDigiStats,
+  getDigiStudents, getDigiStudentById, getDigiStats, deleteDigiStudent,
+  updateDigiChallan,
   getDigiScholarships, updateScholarshipStatus,
-  getDigiChallans, getDigiChallanStats, challanInquiry,
+  getDigiChallans, getDigiChallanStats, challanInquiry, markChallanPaid,
   updateTestScore, getDashboardStats,
   getTelemarketing, getTeleStats, updateTeleStatus,
   getApplications, getMonthlyStats,
+  getDigiCourses,
 }

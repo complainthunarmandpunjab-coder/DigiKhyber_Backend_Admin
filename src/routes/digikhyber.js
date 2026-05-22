@@ -1,11 +1,13 @@
 const router = require('express').Router()
 const {
-  getDigiStudents, getDigiStudentById, getDigiStats,
+  getDigiStudents, getDigiStudentById, getDigiStats, deleteDigiStudent,
+  updateDigiChallan,
   getDigiScholarships, updateScholarshipStatus,
-  getDigiChallans, getDigiChallanStats, challanInquiry,
+  getDigiChallans, getDigiChallanStats, challanInquiry, markChallanPaid,
   updateTestScore, getDashboardStats,
   getTelemarketing, getTeleStats, updateTeleStatus,
   getApplications, getMonthlyStats,
+  getDigiCourses,
 } = require('../controllers/digiController')
 const { verifyToken } = require('../middleware/auth')
 
@@ -19,6 +21,7 @@ router.get('/students',                  getDigiStudents)
 router.get('/students/:id',              getDigiStudentById)
 router.get('/stats',                     getDigiStats)
 router.patch('/students/:id/test',       updateTestScore)
+router.delete('/students/:id',           deleteDigiStudent)
 
 // Applications
 router.get('/applications',              getApplications)
@@ -31,6 +34,8 @@ router.patch('/scholarships/:id/status', updateScholarshipStatus)
 router.get('/challans',                  getDigiChallans)
 router.get('/challan-stats',             getDigiChallanStats)
 router.post('/challan-inquiry',          challanInquiry)
+router.post('/challan-mark-paid',        markChallanPaid)
+router.patch('/challans/:id',            updateDigiChallan)
 
 // Telemarketing
 router.get('/telemarketing',             getTelemarketing)
@@ -39,5 +44,8 @@ router.patch('/telemarketing/:id',       updateTeleStatus)
 
 // Reports
 router.get('/monthly-stats',             getMonthlyStats)
+
+// Courses
+router.get('/courses',                   getDigiCourses)
 
 module.exports = router
