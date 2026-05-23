@@ -3,6 +3,14 @@ const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 require('dotenv').config()
 
+const FALLBACK_ADMIN = {
+  id: 1,
+  name: 'Super Admin',
+  email: process.env.ADMIN_EMAIL || 'admin@edu.pk',
+  password: process.env.ADMIN_PASSWORD || 'admin123',
+  role: 'super_admin',
+}
+
 const login = async (req, res) => {
   const { email, password } = req.body
 
@@ -21,7 +29,6 @@ const login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password)
 
     if (!isMatch) {
-      // also check plain text for default admin
       if (password !== user.password) {
         return res.status(401).json({ success: false, message: 'Invalid email or password.' })
       }
@@ -40,6 +47,20 @@ const login = async (req, res) => {
       user: { id: user.id, name: user.name, email: user.email, role: user.role }
     })
   } catch (err) {
+    // PostgreSQL not available — use fallback admin
+    if (email === FALLBACK_ADMIN.email && password === FALLBACK_ADMIN.password) {
+      const token = jwt.sign(
+        { id: FALLBACK_ADMIN.id, name: FALLBACK_ADMIN.name, email: FALLBACK_ADMIN.email, role: FALLBACK_ADMIN.role },
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.JWT_EXPIRES_IN }
+      )
+      return res.json({
+        success: true,
+        message: 'Login successful.',
+        token,
+        user: { id: FALLBACK_ADMIN.id, name: FALLBACK_ADMIN.name, email: FALLBACK_ADMIN.email, role: FALLBACK_ADMIN.role }
+      })
+    }
     res.status(500).json({ success: false, message: err.message })
   }
 }
